@@ -76,8 +76,8 @@ const getProblem = async (req:Request,res:Response)=>{
             status:"Fail",
             message:"problem_id is not found"
         })
-        const isProblemExist = await Problem.findById({_id:problem_id});
-        if(!isProblemExist) res.status(404).json({
+        const isProblemExist = await Problem.findById(problem_id);
+        if(!isProblemExist) return res.status(404).json({
             status:"fail",
             err:"Problem is not found"
         })
@@ -112,7 +112,7 @@ const getAllProblem = async(req:Request,res:Response)=>{
 const solvedProblem = async(req:Request,res:Response)=>{
     try{
         const user_id = req._id;
-        console.log(user_id);
+        
         const user  = await User.findById(user_id);
         if(!user) return res.status(404).json({
             status:"fail",
@@ -128,4 +128,93 @@ const solvedProblem = async(req:Request,res:Response)=>{
         })
     }
 }
-export  {createProblem,getProblem,getAllProblem,solvedProblem}
+const deleteProblem = async(req:Request,res:Response)=>{
+    try{
+        const problem_id = req.params.id;
+        if(!problem_id) return res.status(400).json({
+            status:"fail",
+            err:"Problem Id is not found"
+        })
+        const isProblemExist = await Problem.findById(problem_id);
+        if(!isProblemExist) return res.status(400).json({
+            status:"fail",
+            err:"Problem is not found"
+        })
+
+        await Problem.findByIdAndDelete(problem_id);
+
+        return res.status(200).json({
+            status:"successful",
+            message:"problem is Deleted"
+        })
+
+
+
+    }catch(err){
+        return res.status(400).json({
+            status:"fail",
+            err:err instanceof Error ? err.message : err
+        })
+    }
+}
+
+
+const updateProblem = async (req:Request,res:Response)=>{
+    try{
+        const { title, referenceSolution, visibleTestCases } = req.body;
+        const problem_id = req.params.id;
+        if(!problem_id) return res.status(400).json({
+            status:"fail",
+            err:"Problem Id is not found"
+        })
+
+        const isProblemExist = await Problem.findById(problem_id);
+        if(!isProblemExist) return res.status(400).json({
+            status:"fail",
+            err:"Problem is not found"
+        })
+
+        for (const { language, completeCode } of referenceSolution) {
+            const language_id = getLanguageById(language);
+
+            const submissions = visibleTestCases.map(
+                (testCase: { input: string; output: string }) => ({
+                    source_code: completeCode,
+                    language_id,
+                    stdin: testCase.input,
+                    expected_output: testCase.output,
+                })
+            );
+
+            const submit_result = await submitBatch(submissions);
+
+            const tokens = submit_result.map(
+                (val: { token: string }) => val.token
+            );
+
+            const test_result = await token_submit(tokens);
+
+            for (const test of test_result) {
+                if (test.status.id !== 3) {
+                    return res.status(400).json({
+                        success: false,
+                        message: getStatus_id(test.status.id),
+                    });
+                }
+            }
+        }
+
+        const updated_problem = await Problem.findByIdAndUpdate(problem_id,{...req.body},{runValidators:true,returnDocument:'after'});
+        return res.status(200).json({
+            status:"successful",
+            updatedProblem:updated_problem
+        })
+    }catch(err){
+        return res.status(400).json({
+            status:"fail",
+            err:err instanceof Error ? err.message : err
+        })
+    }
+}
+
+export  {createProblem,getProblem,getAllProblem,solvedProblem,updateProblem,deleteProblem}
