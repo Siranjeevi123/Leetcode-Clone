@@ -1,73 +1,44 @@
+
 import mongoose, { Schema } from "mongoose";
+import { Role } from "../types/user.types";
 
-const SubmissionSchema = new Schema(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+const userSchema = new Schema({
+    firstName:{
+        type: String,
+        required: true,
+        minLength: 3,
+        maxLength: 20
     },
-
-    problemId: {
-      type: Schema.Types.ObjectId,
-      ref: "Problem",
-      required: true,
+    lastName:{
+        type:String
     },
-
-    code: {
-      type: String,
-      required: true,
+    emailId:{
+        type:String,
+        required:true,
+        unique:true,
+        trim:true,
+        lowercase:true,
+        immutable:true
     },
-
-    language: {
-      type: String,
-      enum: ["c++", "java", "javascript"],
-      required: true,
+    age:{
+        type:Number,
+        min:6,
+        max:80
     },
-
-    status: {
-      type: String,
-      enum: [
-        "pending",
-        "accepted",
-        "wrong_answer",
-        "runtime_error",
-        "compilation_error",
-        "time_limit_exceeded",
-      ],
-      default: "pending",
+    role:{
+        type:String,
+        enum:Object.values(Role),
+        default:Role.USER
     },
-
-    runtime: {
-      type: Number,
-      default: 0,
+    problemSolved:{
+        type:[String]
     },
+    password:{
+        type:String,
+        required:true
+    }
+},{timestamps:true});
 
-    memory: {
-      type: Number,
-      default: 0,
-    },
+const User = mongoose.model('user',userSchema);
 
-    errorMessage: {
-      type: String,
-      default: "",
-    },
-
-    testCasesPassed: {
-      type: Number,
-      default: 0,
-    },
-
-    testCasesTotal: {
-      type: Number,
-      default: 0,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-const Submission = mongoose.model("Submission", SubmissionSchema);
-
-export default Submission;
+export default User;
