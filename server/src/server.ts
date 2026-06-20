@@ -2,7 +2,7 @@ import express from "express";
 import main from "./config/db.config";
 import redis_client from "./config/redis.config";
 import authRouter from "./router/auth.router";
-
+import SubmissionRouter from "./router/submission.router";
 import ProblemRouter from "./router/problem.router";
 const app = express();
 
@@ -10,6 +10,7 @@ app.use(express.json());
 
 app.use('/auth',authRouter);
 app.use('/problem',ProblemRouter);
+app.use('/submission',SubmissionRouter)
 
 const initialization = async () => {
   try {

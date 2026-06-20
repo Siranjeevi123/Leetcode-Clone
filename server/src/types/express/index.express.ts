@@ -1,8 +1,8 @@
 declare global{
     namespace Express{
         interface Request{
-            _id:String
-            role:String,
+            _id:string
+            role:string,
         }
     }
 }

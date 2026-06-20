@@ -7,3 +7,4 @@ export interface Submission {
   command_line_arguments?: string;
 }
 
+export type SubmissionStatus = | "pending"| "accepted"| "wrong_answer"| "runtime_error"| "compilation_error"| "time_limit_exceeded";

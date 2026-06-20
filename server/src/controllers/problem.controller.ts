@@ -76,7 +76,7 @@ const getProblem = async (req:Request,res:Response)=>{
             status:"Fail",
             message:"problem_id is not found"
         })
-        const isProblemExist = await Problem.findById(problem_id);
+        const isProblemExist = await Problem.findById(problem_id).select('_id title description difficulty tags visibleTestCases startCode');
         if(!isProblemExist) return res.status(404).json({
             status:"fail",
             err:"Problem is not found"
@@ -97,7 +97,7 @@ const getProblem = async (req:Request,res:Response)=>{
 
 const getAllProblem = async(req:Request,res:Response)=>{
     try{
-        const Problems = await Problem.find({});
+        const Problems = await Problem.find({}).select('_id title tags difficulty');
         return res.status(200).json({
             Problem:Problems
         })
