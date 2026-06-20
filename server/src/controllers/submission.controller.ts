@@ -1,11 +1,11 @@
 import type { Request,Response } from "express"
 import Problem from "../models/problem.model";
 import Submission from "../models/submission.model";
+import User from "../models/user.model";
 import type { SubmissionStatus } from "../types/submission.types";
 import getLanguageById from "../utils/getLanguageById";
 import submitBatch from "../utils/submitBatch";
 import token_submit from "../utils/token_submitBatch";
-import mongoose from "mongoose";
 import getStatus_id from "../utils/getStatus_id";
 
 const submitSolution = async (req: Request, res: Response) => {
@@ -31,8 +31,8 @@ const submitSolution = async (req: Request, res: Response) => {
     }
 
     const submission = await Submission.create({
-      userId: new mongoose.Types.ObjectId(userId),
-      problemId: new mongoose.Types.ObjectId(problemId),
+      userId,
+      problemId,
       code,
       language,
       status: "pending",
@@ -88,6 +88,13 @@ const submitSolution = async (req: Request, res: Response) => {
 
     await submission.save();
 
+    if(problem.hiddenTestCases.length == submission.testCasesPassed){
+        await User.findByIdAndUpdate(userId, {
+            $addToSet: {
+                problemSolved: problemId,
+            },
+        });
+    }
     return res.status(200).json({
       success: true,
       submission,
