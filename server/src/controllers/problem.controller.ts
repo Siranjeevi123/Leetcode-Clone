@@ -113,12 +113,16 @@ const solvedProblem = async(req:Request,res:Response)=>{
     try{
         const user_id = req._id;
         
-        const user  = await User.findById(user_id);
+        const user  = await User.findById(user_id).populate({
+            path:"problemSolved",
+            select:"_id title difficulty tags"
+        });
         if(!user) return res.status(404).json({
             status:"fail",
             err: "User doesn't found"
         })
         return res.status(200).json({
+            count:user.problemSolved.length,
             solvedProblem:user.problemSolved
         })
     }catch(err){

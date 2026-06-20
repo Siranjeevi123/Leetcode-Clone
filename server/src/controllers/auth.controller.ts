@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import User from "../models/user.model";
 import generate_token from "../utils/genrate_token";
 import redis_client from "../config/redis.config";
+import Submission from "../models/submission.model";
 
 const signup = async(req:Request,res:Response)=>{
     try{
@@ -144,4 +145,22 @@ const getProfile = async (req:Request,res:Response)=>{
         })
     }
 }
-export  {signup,login,logout,getProfile,adminSignup};
+
+const deleteProfile = async (req:Request,res:Response)=>{
+    try{
+        
+        const user_id = req._id;
+        await User.findByIdAndDelete(user_id);
+
+        res.status(200).json({
+            status:"fail",
+            message:"User is deleted successful"
+        })
+    }catch(err){
+        res.status(500).json({
+            status:"fail",
+            err:err instanceof Error ? err.message : err
+        })
+    }
+}
+export  {signup,login,logout,getProfile,adminSignup,deleteProfile};
