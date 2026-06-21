@@ -159,4 +159,32 @@ const runSubmission = async (req: Request, res: Response) => {
   }
 };
 
-export {submitSolution,runSubmission};
+const ProblemSubmission = async (req:Request,res:Response)=>{
+  try{
+    const user_id = req._id;
+
+    const problemId = req.params.problemId;
+    if(!problemId) return res.status(400).json({
+      status:'fail',
+      err:"Problem Id is not found"
+    })
+
+    const submissions = await Submission.find({
+      userId:user_id,
+      problemId:problemId
+    })
+
+    return res.status(200).json({
+      status:'successful',
+      submissions
+    })
+
+  }catch(err){
+    return res.status(400).json({
+      status:'fail',
+      err:err instanceof Error ? err.message : err
+    })
+  }
+}
+
+export {submitSolution,runSubmission,ProblemSubmission};

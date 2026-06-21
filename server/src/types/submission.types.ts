@@ -1,3 +1,4 @@
+
 export interface Submission {
   source_code: string;
   language_id: number;
@@ -8,3 +9,5 @@ export interface Submission {
 }
 
 export type SubmissionStatus = | "pending"| "accepted"| "wrong_answer"| "runtime_error"| "compilation_error"| "time_limit_exceeded";
+
+
