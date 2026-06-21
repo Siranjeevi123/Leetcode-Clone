@@ -106,8 +106,8 @@ const logout = async(req:Request,res:Response)=>{
         const expire = 60*60*24*7;
         await redis_client.set(`logout:${token}`,1,{EX:expire});
         return res.status(200).json({
-            "status":"successful",
-            "message":"Logout"
+            success: true,
+            message: "Logout successful"
         })
 
 
@@ -129,13 +129,13 @@ const getProfile = async (req:Request,res:Response)=>{
         })
 
         return res.status(200).json({
-            status:"successful",
-            user_data:{
-                _id:user_profile._id,
-                firstName:user_profile.firstName,
-                emailId:user_profile.emailId,
-                role:user_profile.role,
-                problemSolved:user_profile.problemSolved
+            success: true,
+            user: {
+                _id: user_profile._id,
+                firstName: user_profile.firstName,
+                emailId: user_profile.emailId,
+                role: user_profile.role,
+                problemSolved: user_profile.problemSolved
             }
         })
     }catch(err){
@@ -153,8 +153,8 @@ const deleteProfile = async (req:Request,res:Response)=>{
         await User.findByIdAndDelete(user_id);
 
         res.status(200).json({
-            status:"fail",
-            message:"User is deleted successful"
+            success: true,
+            message: "User deleted successfully"
         })
     }catch(err){
         res.status(500).json({

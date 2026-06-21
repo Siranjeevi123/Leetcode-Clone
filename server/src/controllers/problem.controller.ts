@@ -83,8 +83,8 @@ const getProblem = async (req:Request,res:Response)=>{
         })
 
         return res.status(200).json({
-            status:"successful",
-            isProblemExist
+            success: true,
+            problem: isProblemExist
         })
 
     }catch(err){
@@ -97,9 +97,10 @@ const getProblem = async (req:Request,res:Response)=>{
 
 const getAllProblem = async(req:Request,res:Response)=>{
     try{
-        const Problems = await Problem.find({}).select('_id title tags difficulty');
+        const problems = await Problem.find({}).select('_id title tags difficulty');
         return res.status(200).json({
-            Problem:Problems
+            success: true,
+            problems
         })
 
     }catch(err){
@@ -122,8 +123,9 @@ const solvedProblem = async(req:Request,res:Response)=>{
             err: "User doesn't found"
         })
         return res.status(200).json({
-            count:user.problemSolved.length,
-            solvedProblem:user.problemSolved
+            success: true,
+            count: user.problemSolved.length,
+            problems: user.problemSolved
         })
     }catch(err){
         return res.status(400).json({
@@ -148,8 +150,8 @@ const deleteProblem = async(req:Request,res:Response)=>{
         await Problem.findByIdAndDelete(problem_id);
 
         return res.status(200).json({
-            status:"successful",
-            message:"problem is Deleted"
+            success: true,
+            message: "Problem deleted successfully"
         })
 
 
@@ -210,8 +212,8 @@ const updateProblem = async (req:Request,res:Response)=>{
 
         const updated_problem = await Problem.findByIdAndUpdate(problem_id,{...req.body},{runValidators:true,returnDocument:'after'});
         return res.status(200).json({
-            status:"successful",
-            updatedProblem:updated_problem
+            success: true,
+            problem: updated_problem
         })
     }catch(err){
         return res.status(400).json({

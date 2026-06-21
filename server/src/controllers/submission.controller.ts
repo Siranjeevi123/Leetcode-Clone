@@ -175,7 +175,7 @@ const ProblemSubmission = async (req:Request,res:Response)=>{
     })
 
     return res.status(200).json({
-      status:'successful',
+      success: true,
       submissions
     })
 
