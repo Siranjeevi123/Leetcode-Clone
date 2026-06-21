@@ -1,6 +1,11 @@
-# CodeForge — LeetCode Clone
+# 🚀 LeetCode Clone
 
-A coding practice platform where users browse problems, write code in a browser-based editor, run against sample test cases, and submit against hidden test cases for a full verdict. Admins can create and manage problems with automated reference-solution validation.
+A LeetCode-style coding platform where users can practice coding problems, submit solutions, and track their progress.
+
+![React](https://img.shields.io/badge/React-19.0.0-61DAFB?style=for-the-badge&logo=react&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-Express-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 
 ---
 
