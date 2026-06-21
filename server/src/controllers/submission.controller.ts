@@ -7,6 +7,8 @@ import getLanguageById from "../utils/getLanguageById";
 import submitBatch from "../utils/submitBatch";
 import token_submit from "../utils/token_submitBatch";
 import getStatus_id from "../utils/getStatus_id";
+import mapJudgeStatus from "../utils/mapJudgeStatus";
+import extractAxiosError from "../utils/extractAxiosError";
 
 const submitSolution = async (req: Request, res: Response) => {
   try {
@@ -71,12 +73,13 @@ const submitSolution = async (req: Request, res: Response) => {
         runtime += parseFloat(test.time ?? "0");
         memory = Math.max(memory, test.memory ?? 0);
       } else {
-        status = "wrong_answer";
+        status = mapJudgeStatus(test.status.id);
         errorMessage =
           test.stderr ||
           test.compile_output ||
           test.message ||
-          getStatus_id(test.status.id);
+          getStatus_id(test.status.id) ||
+          test.status.description;
       }
     }
 
@@ -102,7 +105,7 @@ const submitSolution = async (req: Request, res: Response) => {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: err instanceof Error ? err.message : "Internal Server Error",
+      message: extractAxiosError(err),
     });
   }
 }
@@ -154,7 +157,7 @@ const runSubmission = async (req: Request, res: Response) => {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: err instanceof Error ? err.message : "Internal Server Error",
+      message: extractAxiosError(err),
     });
   }
 };

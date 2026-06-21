@@ -2,10 +2,14 @@ import Editor from "@monaco-editor/react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getErrorMessage } from "../api/client";
-import { getProblem } from "../api/problems";
+import { deleteProblem, getProblem } from "../api/problems";
 import { getSubmissions, runCode, submitCode } from "../api/submissions";
+import ConfirmModal from "../components/ConfirmModal";
 import DifficultyBadge from "../components/DifficultyBadge";
+import ErrorResultBlock from "../components/ErrorResultBlock";
 import Navbar from "../components/Navbar";
+import SubmissionCard from "../components/SubmissionCard";
+import TestCaseText from "../components/TestCaseText";
 import { useAuthStore } from "../store/authStore";
 import { toast } from "../store/toastStore";
 import type {
@@ -16,6 +20,11 @@ import type {
   SubmissionStatus,
 } from "../types";
 import { LANGUAGE_LABELS, LANGUAGES, MONACO_LANGUAGE, TAG_LABELS } from "../types";
+import {
+  extractJudgeError,
+  getApiErrorDetail,
+  judgeErrorTitle,
+} from "../utils/judgeErrors";
 
 type LeftTab = "description" | "submissions";
 type BottomTab = "cases" | "results";
@@ -45,7 +54,8 @@ function statusColor(status: SubmissionStatus) {
 export default function ProblemEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { fetchProfile } = useAuthStore();
+  const { user, fetchProfile } = useAuthStore();
+  const isAdmin = user?.role === "admin";
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -56,8 +66,14 @@ export default function ProblemEditorPage() {
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [runResults, setRunResults] = useState<JudgeResult[] | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
+  const [panelError, setPanelError] = useState<{ title: string; message: string } | null>(
+    null
+  );
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<{
     type: "success" | "error";
     title: string;
@@ -68,7 +84,11 @@ export default function ProblemEditorPage() {
     if (!id) return;
     try {
       const { submissions: s } = await getSubmissions(id);
-      setSubmissions(s);
+      const sorted = [...s].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setSubmissions(sorted);
+      setExpandedSubmissionId((current) => current ?? sorted[0]?._id ?? null);
     } catch {
       /* ignore */
     }
@@ -106,6 +126,7 @@ export default function ProblemEditorPage() {
     setTerminalOpen(true);
     setRunResults(null);
     setSubmitResult(null);
+    setPanelError(null);
     setStatusBanner(null);
     try {
       const { results } = await runCode(id, { code, language });
@@ -118,14 +139,18 @@ export default function ProblemEditorPage() {
           detail: "Visible test cases completed successfully",
         });
       } else {
-        const failed = results.findIndex((r) => !isAccepted(r));
+        const failedIndex = results.findIndex((r) => !isAccepted(r));
+        const failed = results[failedIndex];
+        const errorDetail = extractJudgeError(failed, problem?.visibleTestCases[failedIndex]);
         setStatusBanner({
           type: "error",
           title: "Test case failed",
-          detail: `Case ${failed + 1}: ${results[failed].status.description}`,
+          detail: errorDetail?.split("\n")[0] ?? failed.status.description,
         });
       }
     } catch (err) {
+      const message = getApiErrorDetail(err);
+      setPanelError({ title: "Run Failed", message });
       toast.error(getErrorMessage(err));
     } finally {
       setRunning(false);
@@ -139,10 +164,13 @@ export default function ProblemEditorPage() {
     setTerminalOpen(true);
     setRunResults(null);
     setSubmitResult(null);
+    setPanelError(null);
     setStatusBanner(null);
     try {
       const { submission } = await submitCode(id, { code, language });
       setSubmitResult(submission);
+      setExpandedSubmissionId(submission._id);
+      setLeftTab("submissions");
       await loadSubmissions();
       await fetchProfile();
 
@@ -154,16 +182,42 @@ export default function ProblemEditorPage() {
         });
         toast.success("Solution accepted!");
       } else {
+        const errorDetail =
+          submission.errorMessage?.trim() || statusLabel(submission.status);
         setStatusBanner({
           type: "error",
           title: statusLabel(submission.status),
-          detail: submission.errorMessage || `${submission.testCasesPassed}/${submission.testCasesTotal} passed`,
+          detail: errorDetail.split("\n")[0],
         });
+        toast.error(errorDetail.split("\n")[0] || statusLabel(submission.status));
       }
     } catch (err) {
+      const message = getApiErrorDetail(err);
+      setPanelError({ title: "Submit Failed", message });
       toast.error(getErrorMessage(err));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleLoadSubmissionCode = (submission: Submission) => {
+    setLanguage(submission.language);
+    setCode(submission.code);
+    toast.info("Loaded submission into editor");
+  };
+
+  const handleDelete = async () => {
+    if (!id || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteProblem(id);
+      toast.success("Problem deleted successfully");
+      navigate("/problems");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+      setDeleteModalOpen(false);
     }
   };
 
@@ -216,6 +270,16 @@ export default function ProblemEditorPage() {
                   <div className="flex items-center gap-4 mb-2 flex-wrap">
                     <h1 className="text-2xl font-semibold text-on-surface">{problem.title}</h1>
                     <DifficultyBadge difficulty={problem.difficulty} />
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteModalOpen(true)}
+                        className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg border border-error/40 text-error text-xs font-semibold uppercase hover:bg-error/10 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                        Delete
+                      </button>
+                    )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {problem.tags.map((t) => (
@@ -234,16 +298,12 @@ export default function ProblemEditorPage() {
                 {problem.visibleTestCases.map((tc, i) => (
                   <div key={i} className="space-y-2">
                     <h3 className="text-lg font-semibold">Example {i + 1}:</h3>
-                    <div className="bg-surface-container-high border border-border-subtle rounded-lg p-4 space-y-1 font-mono text-sm">
-                      <div>
-                        <span className="font-semibold">Input:</span> {tc.input}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Output:</span> {tc.output}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Explanation:</span> {tc.explanation}
-                      </div>
+                    <div className="bg-surface-container-high border border-border-subtle rounded-lg p-4 space-y-3 font-mono text-sm">
+                      <TestCaseText label="Input:" value={tc.input} />
+                      <TestCaseText label="Output:" value={tc.output} />
+                      {tc.explanation && (
+                        <TestCaseText label="Explanation:" value={tc.explanation} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -254,35 +314,19 @@ export default function ProblemEditorPage() {
                   <p className="text-sm text-on-surface-variant">No submissions yet.</p>
                 ) : (
                   submissions.map((s) => (
-                    <div
+                    <SubmissionCard
                       key={s._id}
-                      className="p-3 border border-border-subtle rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors"
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className={`font-semibold text-sm ${statusColor(s.status)}`}>
-                          {statusLabel(s.status)}
-                        </span>
-                        <span className="text-xs text-on-surface-variant">
-                          {new Date(s.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="text-xs text-on-surface-variant mt-1 flex gap-4">
-                        <span>{LANGUAGE_LABELS[s.language]}</span>
-                        <span>
-                          {s.testCasesPassed}/{s.testCasesTotal} passed
-                        </span>
-                        {s.status === "accepted" && (
-                          <span>
-                            {(s.runtime * 1000).toFixed(0)}ms · {s.memory}KB
-                          </span>
-                        )}
-                      </div>
-                      {s.errorMessage && (
-                        <pre className="mt-2 text-xs text-error font-mono whitespace-pre-wrap">
-                          {s.errorMessage}
-                        </pre>
-                      )}
-                    </div>
+                      submission={s}
+                      expanded={expandedSubmissionId === s._id}
+                      onToggle={() =>
+                        setExpandedSubmissionId((current) =>
+                          current === s._id ? null : s._id
+                        )
+                      }
+                      onLoadCode={() => handleLoadSubmissionCode(s)}
+                      statusLabel={statusLabel}
+                      statusColor={statusColor}
+                    />
                   ))
                 )}
               </div>
@@ -429,19 +473,13 @@ export default function ProblemEditorPage() {
                 {bottomTab === "cases" ? (
                   <div className="space-y-4">
                     {problem.visibleTestCases.map((tc, i) => (
-                      <div key={i} className="space-y-1">
+                      <div key={i} className="space-y-2">
                         <div className="text-[11px] uppercase tracking-widest font-bold text-on-surface-variant">
                           Case {i + 1}
                         </div>
-                        <div className="bg-surface-container-high rounded p-2 border border-border-subtle space-y-1">
-                          <div>
-                            <span className="text-on-surface-variant">Input: </span>
-                            {tc.input}
-                          </div>
-                          <div>
-                            <span className="text-on-surface-variant">Output: </span>
-                            {tc.output}
-                          </div>
+                        <div className="bg-surface-container-high rounded p-3 border border-border-subtle space-y-2">
+                          <TestCaseText label="Input:" value={tc.input} variant="muted" />
+                          <TestCaseText label="Output:" value={tc.output} variant="muted" />
                         </div>
                       </div>
                     ))}
@@ -451,6 +489,8 @@ export default function ProblemEditorPage() {
                     <span className="material-symbols-outlined animate-spin-custom">sync</span>
                     {running ? "Running test cases..." : "Submitting solution..."}
                   </div>
+                ) : panelError ? (
+                  <ErrorResultBlock title={panelError.title} message={panelError.message} />
                 ) : submitResult ? (
                   <div className="space-y-3">
                     <div
@@ -470,33 +510,51 @@ export default function ProblemEditorPage() {
                         </div>
                       </div>
                     </div>
-                    {submitResult.errorMessage && (
-                      <pre className="text-error whitespace-pre-wrap">{submitResult.errorMessage}</pre>
+                    {submitResult.errorMessage?.trim() && (
+                      <ErrorResultBlock
+                        title={statusLabel(submitResult.status)}
+                        message={submitResult.errorMessage.trim()}
+                      />
                     )}
                   </div>
                 ) : runResults ? (
-                  <div className="space-y-3">
-                    {runResults.map((r, i) => (
-                      <div key={i} className="space-y-1">
-                        <div
-                          className={`text-[11px] uppercase tracking-widest font-bold ${
-                            isAccepted(r) ? "text-success" : "text-error"
-                          }`}
-                        >
-                          Case {i + 1}: {isAccepted(r) ? "Passed" : "Failed"} — {r.status.description}
+                  <div className="space-y-4">
+                    {runResults.map((r, i) => {
+                      const testCase = problem.visibleTestCases[i];
+                      const error = extractJudgeError(r, testCase);
+                      const accepted = isAccepted(r);
+
+                      return (
+                        <div key={i} className="space-y-2">
+                          <div
+                            className={`text-[11px] uppercase tracking-widest font-bold ${
+                              accepted ? "text-success" : "text-error"
+                            }`}
+                          >
+                            Case {i + 1}: {accepted ? "Passed" : "Failed"} — {r.status.description}
+                            {r.time && ` · ${(parseFloat(r.time) * 1000).toFixed(0)}ms`}
+                          </div>
+                          {testCase && (
+                            <div className="bg-surface-container-high rounded p-3 border border-border-subtle space-y-2">
+                              <TestCaseText label="Input:" value={testCase.input} variant="muted" />
+                              {!accepted && (
+                                <TestCaseText
+                                  label="Expected Output:"
+                                  value={testCase.output}
+                                  variant="muted"
+                                />
+                              )}
+                            </div>
+                          )}
+                          {accepted && r.stdout?.trim() && (
+                            <TestCaseText label="Output:" value={r.stdout.trim()} variant="muted" />
+                          )}
+                          {error && (
+                            <ErrorResultBlock title={judgeErrorTitle(r)} message={error} />
+                          )}
                         </div>
-                        {r.stdout && (
-                          <pre className="bg-surface-container-high rounded p-2 border border-border-subtle text-on-surface whitespace-pre-wrap">
-                            {r.stdout}
-                          </pre>
-                        )}
-                        {(r.stderr || r.compile_output) && (
-                          <pre className="bg-surface-container-high rounded p-2 border border-border-subtle text-error whitespace-pre-wrap">
-                            {r.stderr || r.compile_output}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-on-surface-variant">Run or submit to see results.</p>
@@ -506,6 +564,17 @@ export default function ProblemEditorPage() {
           </div>
         </section>
       </main>
+
+      <ConfirmModal
+        open={deleteModalOpen}
+        title="Delete Problem"
+        message="Are you sure you want to delete this problem?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteModalOpen(false)}
+      />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getErrorMessage } from "../api/client";
-import { getProblems } from "../api/problems";
+import { deleteProblem, getProblems } from "../api/problems";
+import ConfirmModal from "../components/ConfirmModal";
 import DifficultyBadge from "../components/DifficultyBadge";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
@@ -17,8 +18,11 @@ export default function ProblemsPage() {
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all");
   const [tag, setTag] = useState<Tag | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "solved" | "unsolved">("all");
+  const [deleteTarget, setDeleteTarget] = useState<ProblemListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     getProblems()
@@ -54,6 +58,21 @@ export default function ProblemsPage() {
     if (!pool.length) return;
     const pick = pool[Math.floor(Math.random() * pool.length)];
     navigate(`/problems/${pick._id}`);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteProblem(deleteTarget._id);
+      setProblems((prev) => prev.filter((p) => p._id !== deleteTarget._id));
+      toast.success("Problem deleted successfully");
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -198,6 +217,11 @@ export default function ProblemsPage() {
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-on-surface-variant hidden md:table-cell">
                       Tags
                     </th>
+                    {isAdmin && (
+                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-on-surface-variant w-24 text-center">
+                        Actions
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-subtle">
@@ -243,6 +267,21 @@ export default function ProblemsPage() {
                             ))}
                           </div>
                         </td>
+                        {isAdmin && (
+                          <td className="px-6 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(p);
+                              }}
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors"
+                              aria-label={`Delete ${p.title}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -254,6 +293,17 @@ export default function ProblemsPage() {
       </main>
 
       <Footer />
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete Problem"
+        message="Are you sure you want to delete this problem?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

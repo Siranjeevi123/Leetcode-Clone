@@ -1,20 +1,19 @@
 import axios from "axios";
 import type { Submission } from "../types/submission.types";
+import extractAxiosError from "./extractAxiosError";
+import { encodeJudgeSubmission } from "./judge0Codec";
 
 const submitBatch = async (submissions: Submission[]) => {
   try {
-    console.log(process.env.JUDGE0_KEY);
-
     const response = await axios.post(
-      `${process.env.JUDGE0_KEY}/submissions/batch?base64_encoded=false`,
+      `${process.env.JUDGE0_KEY}/submissions/batch?base64_encoded=true`,
       {
-        submissions,
+        submissions: submissions.map(encodeJudgeSubmission),
       }
     );
     return response.data;
-  } catch (err: any) {
-    
-    throw err;
+  } catch (err: unknown) {
+    throw new Error(extractAxiosError(err));
   }
 };
 

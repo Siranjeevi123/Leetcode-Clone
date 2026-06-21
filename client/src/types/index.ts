@@ -82,6 +82,8 @@ export interface JudgeResult {
   stderr?: string | null;
   compile_output?: string | null;
   message?: string | null;
+  stdin?: string | null;
+  expected_output?: string | null;
 }
 
 export interface ApiError {
