@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import User from "../models/user.model";
 import generate_token from "../utils/genrate_token";
 import redis_client from "../config/redis.config";
-import Submission from "../models/submission.model";
+
 
 const signup = async(req:Request,res:Response)=>{
     try{
