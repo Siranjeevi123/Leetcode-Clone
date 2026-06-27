@@ -1,6 +1,6 @@
 # 🚀 LeetCode Clone
 
-**Live Demo:** [https://leetcode-clone-smoky.vercel.app/](https://leetcode-clone-smoky.vercel.app/)
+**Live Demo:** [https://leetcode-clone-murex.vercel.app](https://leetcode-clone-murex.vercel.app) &nbsp;|&nbsp; **Backend API:** [https://leetcodeclone.duckdns.org](https://leetcodeclone.duckdns.org)
 
 A LeetCode-style coding platform where users can practice coding problems, submit solutions, and track their progress.
 
