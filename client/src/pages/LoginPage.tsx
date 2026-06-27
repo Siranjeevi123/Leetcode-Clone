@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getErrorMessage } from "../api/client";
+import LoadingScreen from "../components/ui/LoadingScreen";
 import { useAuthStore } from "../store/authStore";
 import { toast } from "../store/toastStore";
 
@@ -10,6 +11,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const { login, loading } = useAuthStore();
   const navigate = useNavigate();
+
+  if (loading) {
+    return <LoadingScreen message="Signing in..." />;
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

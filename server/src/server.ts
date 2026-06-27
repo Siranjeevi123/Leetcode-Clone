@@ -5,6 +5,7 @@ import redis_client from "./config/redis.config";
 import authRouter from "./router/auth.router";
 import SubmissionRouter from "./router/submission.router";
 import ProblemRouter from "./router/problem.router";
+import aiRouter from "./router/ai.router";
 const app = express();
 
 app.use(cors({
@@ -15,7 +16,8 @@ app.use(express.json());
 
 app.use('/auth',authRouter);
 app.use('/problem',ProblemRouter);
-app.use('/submission',SubmissionRouter)
+app.use('/submission',SubmissionRouter);
+app.use('/ai',aiRouter);
 
 const initialization = async () => {
   try {

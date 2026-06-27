@@ -1,17 +1,13 @@
 import { Navigate, Outlet } from "react-router-dom";
+import LoadingScreen from "./ui/LoadingScreen";
 import { useAuthStore } from "../store/authStore";
 
 export default function ProtectedRoute() {
-  const { user, initialized } = useAuthStore();
+  const initialized = useAuthStore((s) => s.initialized);
+  const user = useAuthStore((s) => s.user);
 
   if (!initialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-app-bg">
-        <span className="material-symbols-outlined animate-spin-custom text-primary text-3xl">
-          sync
-        </span>
-      </div>
-    );
+    return <LoadingScreen message="Restoring session..." />;
   }
 
   if (!user) return <Navigate to="/login" replace />;

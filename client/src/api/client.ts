@@ -1,5 +1,6 @@
 import type { ApiError } from "../types";
 import { getApiErrorDetail } from "../utils/judgeErrors";
+import { useAuthStore } from "../store/authStore";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -18,9 +19,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
   if (!res.ok) {
     const error: ApiError = { status: res.status, ...data };
-    if (res.status === 401) {
-      localStorage.removeItem("token");
-      window.dispatchEvent(new Event("auth:logout"));
+    if (res.status === 401 || res.status === 403) {
+      useAuthStore.getState().clearSession();
     }
     throw error;
   }

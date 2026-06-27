@@ -104,6 +104,178 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.toast-enter {
-  animation: slide-in 0.2s ease-out;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+
+.page-enter {
+  animation: slide-in 0.25s ease-out, fade-in 0.25s ease-out;
+}
+
+.prose-invert {
+  --tw-prose-body: #e5e2e1;
+  --tw-prose-headings: #e5e2e1;
+  --tw-prose-links: #ffa116;
+}
+
+/* ================================================================
+   WORKSPACE THREE-PANEL LAYOUT
+   These classes are authoritative — they control the problem page
+   split layout (description | editor | AI assistant).
+================================================================ */
+
+/* The outermost flex row that holds all three panels */
+.ws-root {
+  display: flex !important;
+  flex-direction: row !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  flex: 1 1 0% !important;
+}
+
+/* Problem description panel — 30%, collapses to 0 when closed */
+.ws-left {
+  flex: 0 0 30% !important;
+  max-width: 30% !important;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border-subtle);
+  transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.3s ease;
+}
+
+.ws-left--closed {
+  flex: 0 0 0% !important;
+  max-width: 0 !important;
+  opacity: 0;
+  border-right: none !important;
+  pointer-events: none;
+}
+
+/* Code editor panel — 50% on desktop, grows when side panels collapse */
+.ws-center {
+  flex: 1 1 50% !important;
+  min-width: 0 !important;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* AI assistant panel — 20% on lg+, hidden inline on tablet/mobile */
+.ws-right {
+  display: none;
+  flex: 0 0 20% !important;
+  max-width: 20% !important;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--color-border-subtle);
+  transition: flex-basis 0.3s ease, max-width 0.3s ease, opacity 0.3s ease;
+}
+
+@media (min-width: 1024px) {
+  .ws-right {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.ws-right--closed {
+  flex: 0 0 0% !important;
+  max-width: 0 !important;
+  opacity: 0;
+  border-left: none !important;
+  pointer-events: none;
+}
+
+/* Tablet: problem + editor only (AI uses drawer overlay) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .ws-left {
+    flex: 0 0 35% !important;
+    max-width: 35% !important;
+  }
+
+  .ws-left--closed {
+    flex: 0 0 0% !important;
+    max-width: 0 !important;
+  }
+
+  .ws-center {
+    flex: 1 1 65% !important;
+  }
+}
+
+/* AI drawer overlay — tablet */
+.ws-ai-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  top: 3.5rem;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.6);
+  animation: ws-fade-in 0.2s ease;
+}
+
+.ws-ai-drawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(100%, 28rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-sidebar);
+  border-left: 1px solid var(--color-border-subtle);
+  animation: ws-slide-in-right 0.3s ease;
+}
+
+/* AI bottom sheet — mobile */
+.ws-ai-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  top: 3.5rem;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.6);
+  animation: ws-fade-in 0.2s ease;
+}
+
+.ws-ai-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(75vh, 32rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-sidebar);
+  border-top: 1px solid var(--color-border-subtle);
+  border-radius: 1rem 1rem 0 0;
+  animation: ws-slide-in-up 0.3s ease;
+}
+
+@keyframes ws-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ws-slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes ws-slide-in-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Panel fill — makes a child div fill its workspace cell */
+.ws-fill {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+

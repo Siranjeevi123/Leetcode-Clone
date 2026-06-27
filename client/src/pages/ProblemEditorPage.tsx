@@ -1,15 +1,20 @@
-import Editor from "@monaco-editor/react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getErrorMessage } from "../api/client";
 import { deleteProblem, getProblem } from "../api/problems";
 import { getSubmissions, runCode, submitCode } from "../api/submissions";
+import AiAssistantPanel from "../components/ai/AiAssistantPanel";
 import ConfirmModal from "../components/ConfirmModal";
-import DifficultyBadge from "../components/DifficultyBadge";
-import ErrorResultBlock from "../components/ErrorResultBlock";
+import CodeEditor from "../components/editor/CodeEditor";
+import EditorToolbar from "../components/editor/EditorToolbar";
+import ProblemDescriptionPanel from "../components/editor/ProblemDescriptionPanel";
+import ResultCard from "../components/editor/ResultCard";
+import SubmissionHistoryTable from "../components/editor/SubmissionHistoryTable";
+import WorkspaceLayout from "../components/editor/WorkspaceLayout";
 import Navbar from "../components/Navbar";
-import SubmissionCard from "../components/SubmissionCard";
 import TestCaseText from "../components/TestCaseText";
+import LoadingScreen from "../components/ui/LoadingScreen";
+import { useDebouncedEffect, useEditorSettings } from "../hooks/useEditorSettings";
 import { useAuthStore } from "../store/authStore";
 import { toast } from "../store/toastStore";
 import type {
@@ -19,7 +24,6 @@ import type {
   Submission,
   SubmissionStatus,
 } from "../types";
-import { LANGUAGE_LABELS, LANGUAGES, MONACO_LANGUAGE, TAG_LABELS } from "../types";
 import {
   extractJudgeError,
   getApiErrorDetail,
@@ -45,10 +49,32 @@ function statusLabel(status: SubmissionStatus) {
   return map[status];
 }
 
-function statusColor(status: SubmissionStatus) {
-  if (status === "accepted") return "text-success";
-  if (status === "pending") return "text-warning";
-  return "text-error";
+/** Returns true when viewport >= 768px (md). Uses JS so it's unaffected by Tailwind v4 CSS layer ordering. */
+function useIsDesktop() {
+  const [v, setV] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 768px)").matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const h = (e: MediaQueryListEvent) => setV(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return v;
+}
+
+/** Returns true when viewport >= 1024px (lg). Used to inline-render the AI side panel vs overlay. */
+function useIsLargeScreen() {
+  const [v, setV] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 1024px)").matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const h = (e: MediaQueryListEvent) => setV(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return v;
 }
 
 export default function ProblemEditorPage() {
@@ -62,7 +88,7 @@ export default function ProblemEditorPage() {
   const [language, setLanguage] = useState<Language>("javascript");
   const [code, setCode] = useState("");
   const [leftTab, setLeftTab] = useState<LeftTab>("description");
-  const [bottomTab, setBottomTab] = useState<BottomTab>("cases");
+  const [bottomTab, setBottomTab] = useState<BottomTab>("results");
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -70,25 +96,31 @@ export default function ProblemEditorPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [runResults, setRunResults] = useState<JudgeResult[] | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
-  const [panelError, setPanelError] = useState<{ title: string; message: string } | null>(
-    null
-  );
-  const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
-  const [statusBanner, setStatusBanner] = useState<{
-    type: "success" | "error";
-    title: string;
-    detail?: string;
-  } | null>(null);
+  const [panelError, setPanelError] = useState<{ title: string; message: string } | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(true);
+  const [mobileTab, setMobileTab] = useState<"description" | "code" | "submissions">("description");
+  const [pendingAiPrompt, setPendingAiPrompt] = useState<string | null>(null);
+  const [viewCodeSubmission, setViewCodeSubmission] = useState<Submission | null>(null);
+  const isDesktop = useIsDesktop();
+  const isLargeScreen = useIsLargeScreen();
+
+  const {
+    theme,
+    fontSize,
+    setTheme,
+    setFontSize,
+    getAutoSavedCode,
+    saveCode,
+  } = useEditorSettings(id ?? "default");
 
   const loadSubmissions = useCallback(async () => {
     if (!id) return;
     try {
       const { submissions: s } = await getSubmissions(id);
-      const sorted = [...s].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      setSubmissions(
+        [...s].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       );
-      setSubmissions(sorted);
-      setExpandedSubmissionId((current) => current ?? sorted[0]?._id ?? null);
     } catch {
       /* ignore */
     }
@@ -99,11 +131,11 @@ export default function ProblemEditorPage() {
     getProblem(id)
       .then(({ problem: p }) => {
         setProblem(p);
-        const starter =
-          p.startCode.find((s) => s.language === "javascript") ?? p.startCode[0];
+        const starter = p.startCode.find((s) => s.language === "javascript") ?? p.startCode[0];
         if (starter) {
           setLanguage(starter.language);
-          setCode(starter.initialCode);
+          const saved = getAutoSavedCode(starter.language);
+          setCode(saved ?? starter.initialCode);
         }
       })
       .catch((err) => {
@@ -111,12 +143,39 @@ export default function ProblemEditorPage() {
         navigate("/problems");
       });
     loadSubmissions();
-  }, [id, navigate, loadSubmissions]);
+  }, [id, navigate, loadSubmissions, getAutoSavedCode]);
+
+  useEffect(() => {
+    if (leftTab === "description" && mobileTab === "submissions") {
+      setMobileTab("description");
+    } else if (leftTab === "submissions" && mobileTab === "description") {
+      setMobileTab("submissions");
+    }
+  }, [leftTab, mobileTab]);
+
+  useDebouncedEffect(() => {
+    if (id && code) saveCode(language, code);
+  }, [code, language, id, saveCode]);
 
   const handleLanguageChange = (lang: Language) => {
     setLanguage(lang);
     const starter = problem?.startCode.find((s) => s.language === lang);
-    if (starter) setCode(starter.initialCode);
+    const saved = id ? getAutoSavedCode(lang) : null;
+    if (saved) setCode(saved);
+    else if (starter) setCode(starter.initialCode);
+  };
+
+  const buildAskAiPrompt = (context: string) => {
+    return `Help me understand this result:\n\n${context}\n\nPlease analyze what went wrong and suggest fixes.`;
+  };
+
+  const openAiWithPrompt = (prompt: string) => {
+    setAiOpen(true);
+    setPendingAiPrompt(prompt);
+  };
+
+  const handleAskAiFromResult = (errorText: string) => {
+    openAiWithPrompt(buildAskAiPrompt(errorText));
   };
 
   const handleRun = async () => {
@@ -127,26 +186,17 @@ export default function ProblemEditorPage() {
     setRunResults(null);
     setSubmitResult(null);
     setPanelError(null);
-    setStatusBanner(null);
     try {
       const { results } = await runCode(id, { code, language });
       setRunResults(results);
       const allPass = results.every(isAccepted);
-      if (allPass) {
-        setStatusBanner({
-          type: "success",
-          title: "All test cases passed",
-          detail: "Visible test cases completed successfully",
-        });
-      } else {
+      if (!allPass) {
         const failedIndex = results.findIndex((r) => !isAccepted(r));
         const failed = results[failedIndex];
         const errorDetail = extractJudgeError(failed, problem?.visibleTestCases[failedIndex]);
-        setStatusBanner({
-          type: "error",
-          title: "Test case failed",
-          detail: errorDetail?.split("\n")[0] ?? failed.status.description,
-        });
+        toast.error(errorDetail?.split("\n")[0] ?? "Test case failed");
+      } else {
+        toast.success("All test cases passed");
       }
     } catch (err) {
       const message = getApiErrorDetail(err);
@@ -165,31 +215,17 @@ export default function ProblemEditorPage() {
     setRunResults(null);
     setSubmitResult(null);
     setPanelError(null);
-    setStatusBanner(null);
     try {
       const { submission } = await submitCode(id, { code, language });
       setSubmitResult(submission);
-      setExpandedSubmissionId(submission._id);
       setLeftTab("submissions");
       await loadSubmissions();
       await fetchProfile();
 
       if (submission.status === "accepted") {
-        setStatusBanner({
-          type: "success",
-          title: "Accepted",
-          detail: `Runtime: ${(submission.runtime * 1000).toFixed(0)}ms | Memory: ${submission.memory}KB`,
-        });
         toast.success("Solution accepted!");
       } else {
-        const errorDetail =
-          submission.errorMessage?.trim() || statusLabel(submission.status);
-        setStatusBanner({
-          type: "error",
-          title: statusLabel(submission.status),
-          detail: errorDetail.split("\n")[0],
-        });
-        toast.error(errorDetail.split("\n")[0] || statusLabel(submission.status));
+        toast.error(submission.errorMessage?.split("\n")[0] || statusLabel(submission.status));
       }
     } catch (err) {
       const message = getApiErrorDetail(err);
@@ -203,6 +239,7 @@ export default function ProblemEditorPage() {
   const handleLoadSubmissionCode = (submission: Submission) => {
     setLanguage(submission.language);
     setCode(submission.code);
+    setViewCodeSubmission(null);
     toast.info("Loaded submission into editor");
   };
 
@@ -222,347 +259,290 @@ export default function ProblemEditorPage() {
   };
 
   if (!problem) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-app-bg">
-        <span className="material-symbols-outlined animate-spin-custom text-primary text-3xl">
-          sync
-        </span>
-      </div>
-    );
+    return <LoadingScreen message="Loading problem..." />;
   }
 
-  return (
-    <div className="bg-app-bg text-on-surface min-h-screen">
-      <Navbar />
-
-      <main className="pt-14 flex h-[calc(100vh-56px)] overflow-hidden flex-col lg:flex-row">
-        {/* Left panel */}
-        <aside className="w-full lg:w-[40%] flex flex-col bg-sidebar border-r border-border-subtle overflow-hidden min-h-[300px] lg:min-h-0">
-          <div className="flex bg-surface-container-lowest border-b border-border-subtle">
-            <button
-              onClick={() => setLeftTab("description")}
-              className={`flex items-center gap-1 px-4 py-2 text-xs font-semibold uppercase tracking-wider border-r border-border-subtle ${
-                leftTab === "description"
-                  ? "bg-surface-container-high text-primary"
-                  : "text-on-surface-variant hover:bg-surface-container"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">description</span>
-              Description
-            </button>
-            <button
-              onClick={() => setLeftTab("submissions")}
-              className={`flex items-center gap-1 px-4 py-2 text-xs font-semibold uppercase tracking-wider ${
-                leftTab === "submissions"
-                  ? "bg-surface-container-high text-primary"
-                  : "text-on-surface-variant hover:bg-surface-container"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">list_alt</span>
-              Submissions
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-6">
-            {leftTab === "description" ? (
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center gap-4 mb-2 flex-wrap">
-                    <h1 className="text-2xl font-semibold text-on-surface">{problem.title}</h1>
-                    <DifficultyBadge difficulty={problem.difficulty} />
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteModalOpen(true)}
-                        className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg border border-error/40 text-error text-xs font-semibold uppercase hover:bg-error/10 transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">delete</span>
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {problem.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="text-xs bg-surface-container-highest px-2 py-0.5 rounded text-on-surface-variant"
-                      >
-                        {TAG_LABELS[t]}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-on-surface leading-relaxed whitespace-pre-wrap">
-                  {problem.description}
-                </div>
-                {problem.visibleTestCases.map((tc, i) => (
-                  <div key={i} className="space-y-2">
-                    <h3 className="text-lg font-semibold">Example {i + 1}:</h3>
-                    <div className="bg-surface-container-high border border-border-subtle rounded-lg p-4 space-y-3 font-mono text-sm">
-                      <TestCaseText label="Input:" value={tc.input} />
-                      <TestCaseText label="Output:" value={tc.output} />
-                      {tc.explanation && (
-                        <TestCaseText label="Explanation:" value={tc.explanation} />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {submissions.length === 0 ? (
-                  <p className="text-sm text-on-surface-variant">No submissions yet.</p>
-                ) : (
-                  submissions.map((s) => (
-                    <SubmissionCard
-                      key={s._id}
-                      submission={s}
-                      expanded={expandedSubmissionId === s._id}
-                      onToggle={() =>
-                        setExpandedSubmissionId((current) =>
-                          current === s._id ? null : s._id
-                        )
-                      }
-                      onLoadCode={() => handleLoadSubmissionCode(s)}
-                      statusLabel={statusLabel}
-                      statusColor={statusColor}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
-
-        {/* Right panel */}
-        <section className="w-full lg:w-[60%] flex flex-col bg-editor-bg relative flex-1 min-h-0">
-          <div className="h-11 flex items-center justify-between px-4 bg-surface-container-low border-b border-border-subtle shrink-0">
-            <div className="flex items-center gap-4">
-              <select
-                value={language}
-                onChange={(e) => handleLanguageChange(e.target.value as Language)}
-                className="bg-surface-container-high border border-border-subtle rounded px-3 py-1 text-sm hover:border-primary-container"
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l} value={l}>
-                    {LANGUAGE_LABELS[l]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRun}
-                disabled={running || submitting}
-                className="px-4 py-1.5 border border-border-subtle text-on-surface hover:bg-surface-container rounded-lg text-xs font-semibold uppercase min-w-[80px] flex items-center justify-center gap-2 disabled:opacity-70"
-              >
-                {running ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin-custom text-[18px]">
-                      sync
-                    </span>
-                    Running...
-                  </>
-                ) : (
-                  "Run"
-                )}
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={running || submitting}
-                className="px-4 py-1.5 bg-primary-container text-on-primary-container hover:brightness-110 rounded-lg text-xs font-semibold uppercase font-bold disabled:opacity-70 flex items-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin-custom text-[18px]">
-                      sync
-                    </span>
-                    Submitting...
-                  </>
-                ) : (
-                  "Submit"
-                )}
-              </button>
-            </div>
-          </div>
-
-          {statusBanner && (
-            <div
-              className={`absolute top-14 right-4 z-20 flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                statusBanner.type === "success"
-                  ? "bg-success/10 border-success/30 text-success"
-                  : "bg-error/10 border-error/30 text-error"
-              }`}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                {statusBanner.type === "success" ? "check_circle" : "cancel"}
-              </span>
-              <div>
-                <div className="font-bold text-sm">{statusBanner.title}</div>
-                {statusBanner.detail && (
-                  <div className="text-[10px] opacity-80">{statusBanner.detail}</div>
-                )}
-              </div>
-              <button onClick={() => setStatusBanner(null)} className="ml-2 opacity-50 hover:opacity-100">
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            </div>
-          )}
-
-          <div className={`flex-1 min-h-[200px] relative ${running ? "opacity-70 pointer-events-none" : ""}`}>
-            <Editor
-              height="100%"
-              language={MONACO_LANGUAGE[language]}
-              value={code}
-              onChange={(v) => setCode(v ?? "")}
-              theme="vs-dark"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                fontFamily: "JetBrains Mono, monospace",
-                scrollBeyondLastLine: false,
-                padding: { top: 12 },
-              }}
-            />
-          </div>
-
-          {/* Bottom terminal */}
-          <div
-            className={`bg-background border-t border-border-subtle flex flex-col transition-all shrink-0 ${
-              terminalOpen ? "h-1/3 min-h-[160px]" : "h-9"
+  const leftPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--color-sidebar)' }}>
+      <div className="flex bg-surface-container-lowest border-b border-border-subtle shrink-0">
+        {(
+          [
+            ["description", "description", "Description"],
+            ["submissions", "history", "Submissions"],
+          ] as const
+        ).map(([tab, icon, label]) => (
+          <button
+            key={tab}
+            onClick={() => setLeftTab(tab)}
+            className={`flex items-center gap-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-r border-border-subtle ${
+              leftTab === tab
+                ? "bg-surface-container-high text-primary border-b-2 border-b-primary"
+                : "text-on-surface-variant hover:bg-surface-container"
             }`}
           >
-            <div className="h-9 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-border-subtle shrink-0">
-              <div className="flex gap-4 h-full">
-                <button
-                  onClick={() => setBottomTab("cases")}
-                  className={`h-full px-2 text-xs font-bold uppercase ${
-                    bottomTab === "cases"
-                      ? "border-b-2 border-primary text-primary"
-                      : "text-on-surface-variant hover:text-on-surface"
-                  }`}
-                >
-                  Test Cases
-                </button>
-                <button
-                  onClick={() => setBottomTab("results")}
-                  className={`h-full px-2 text-xs font-bold uppercase ${
-                    bottomTab === "results"
-                      ? "border-b-2 border-primary text-primary"
-                      : "text-on-surface-variant hover:text-on-surface"
-                  }`}
-                >
-                  Test Results
-                </button>
-              </div>
+            <span className="material-symbols-outlined text-[18px]">{icon}</span>
+            <span className="hidden sm:inline">{label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0">
+        {leftTab === "description" ? (
+          <ProblemDescriptionPanel
+            problem={problem}
+            isAdmin={isAdmin}
+            onDelete={() => setDeleteModalOpen(true)}
+          />
+        ) : (
+          <SubmissionHistoryTable
+            submissions={submissions}
+            statusLabel={statusLabel}
+            onViewCode={(s) => setViewCodeSubmission(s)}
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  const centerPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', minWidth: 0, background: 'var(--color-editor-bg)' }}>
+      <EditorToolbar
+        language={language}
+        onLanguageChange={handleLanguageChange}
+        onRun={handleRun}
+        onSubmit={handleSubmit}
+        running={running}
+        submitting={submitting}
+        theme={theme}
+        onThemeChange={setTheme}
+        fontSize={fontSize}
+        onFontSizeChange={setFontSize}
+        aiOpen={aiOpen}
+        onToggleAi={() => setAiOpen((v) => !v)}
+        descriptionOpen={descriptionOpen}
+        onToggleDescription={() => setDescriptionOpen((v) => !v)}
+      />
+
+      <div
+        className={`flex-1 min-w-0 min-h-0 relative ${running || submitting ? "opacity-70 pointer-events-none" : ""}`}
+      >
+        <CodeEditor
+          language={language}
+          code={code}
+          onChange={setCode}
+          theme={theme}
+          fontSize={fontSize}
+          minimap={false}
+          layoutTrigger={aiOpen.toString() + descriptionOpen.toString()}
+        />
+      </div>
+
+      <div
+        className={`bg-background border-t border-border-subtle flex flex-col shrink-0 transition-all ${
+          terminalOpen ? "h-[28%] min-h-[120px] max-h-[240px]" : "h-9"
+        }`}
+      >
+        <div className="h-9 flex items-center justify-between px-3 bg-surface-container-lowest border-b border-border-subtle shrink-0">
+          <div className="flex gap-3 h-full">
+            {(
+              [
+                ["cases", "Test Cases"],
+                ["results", "Results"],
+              ] as const
+            ).map(([tab, label]) => (
               <button
-                onClick={() => setTerminalOpen(!terminalOpen)}
-                className="p-1 text-on-surface-variant hover:text-on-surface"
+                key={tab}
+                onClick={() => setBottomTab(tab)}
+                className={`h-full px-2 text-xs font-bold uppercase ${
+                  bottomTab === tab
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
               >
-                <span className="material-symbols-outlined text-[18px]">
-                  {terminalOpen ? "expand_more" : "expand_less"}
-                </span>
+                {label}
               </button>
-            </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setTerminalOpen(!terminalOpen)}
+            className="p-1 text-on-surface-variant hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {terminalOpen ? "expand_more" : "expand_less"}
+            </span>
+          </button>
+        </div>
 
-            {terminalOpen && (
-              <div className="flex-1 p-4 font-mono text-sm overflow-auto">
-                {bottomTab === "cases" ? (
-                  <div className="space-y-4">
-                    {problem.visibleTestCases.map((tc, i) => (
-                      <div key={i} className="space-y-2">
-                        <div className="text-[11px] uppercase tracking-widest font-bold text-on-surface-variant">
-                          Case {i + 1}
-                        </div>
-                        <div className="bg-surface-container-high rounded p-3 border border-border-subtle space-y-2">
-                          <TestCaseText label="Input:" value={tc.input} variant="muted" />
-                          <TestCaseText label="Output:" value={tc.output} variant="muted" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : running || submitting ? (
-                  <div className="flex items-center gap-2 text-on-surface-variant">
-                    <span className="material-symbols-outlined animate-spin-custom">sync</span>
-                    {running ? "Running test cases..." : "Submitting solution..."}
-                  </div>
-                ) : panelError ? (
-                  <ErrorResultBlock title={panelError.title} message={panelError.message} />
-                ) : submitResult ? (
-                  <div className="space-y-3">
-                    <div
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                        submitResult.status === "accepted"
-                          ? "bg-success/10 border-success/30 text-success"
-                          : "bg-error/10 border-error/30 text-error"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                        {submitResult.status === "accepted" ? "check_circle" : "cancel"}
-                      </span>
-                      <div>
-                        <div className="font-bold">{statusLabel(submitResult.status)}</div>
-                        <div className="text-xs opacity-80">
-                          {submitResult.testCasesPassed}/{submitResult.testCasesTotal} test cases passed
-                        </div>
-                      </div>
+        {terminalOpen && (
+          <div className="flex-1 p-3 overflow-auto min-h-0">
+            {bottomTab === "cases" ? (
+              <div className="space-y-3">
+                {problem.visibleTestCases.map((tc, i) => (
+                  <div key={i} className="rounded-lg border border-border-subtle bg-surface p-3 space-y-2">
+                    <div className="text-[11px] uppercase tracking-widest font-bold text-on-surface-variant">
+                      Case {i + 1}
                     </div>
-                    {submitResult.errorMessage?.trim() && (
-                      <ErrorResultBlock
-                        title={statusLabel(submitResult.status)}
-                        message={submitResult.errorMessage.trim()}
-                      />
-                    )}
+                    <TestCaseText label="Input:" value={tc.input} variant="muted" />
+                    <TestCaseText label="Output:" value={tc.output} variant="muted" />
                   </div>
-                ) : runResults ? (
-                  <div className="space-y-4">
-                    {runResults.map((r, i) => {
-                      const testCase = problem.visibleTestCases[i];
-                      const error = extractJudgeError(r, testCase);
-                      const accepted = isAccepted(r);
-
-                      return (
-                        <div key={i} className="space-y-2">
-                          <div
-                            className={`text-[11px] uppercase tracking-widest font-bold ${
-                              accepted ? "text-success" : "text-error"
-                            }`}
-                          >
-                            Case {i + 1}: {accepted ? "Passed" : "Failed"} — {r.status.description}
-                            {r.time && ` · ${(parseFloat(r.time) * 1000).toFixed(0)}ms`}
-                          </div>
-                          {testCase && (
-                            <div className="bg-surface-container-high rounded p-3 border border-border-subtle space-y-2">
-                              <TestCaseText label="Input:" value={testCase.input} variant="muted" />
-                              {!accepted && (
-                                <TestCaseText
-                                  label="Expected Output:"
-                                  value={testCase.output}
-                                  variant="muted"
-                                />
-                              )}
-                            </div>
-                          )}
-                          {accepted && r.stdout?.trim() && (
-                            <TestCaseText label="Output:" value={r.stdout.trim()} variant="muted" />
-                          )}
-                          {error && (
-                            <ErrorResultBlock title={judgeErrorTitle(r)} message={error} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-on-surface-variant">Run or submit to see results.</p>
-                )}
+                ))}
               </div>
+            ) : running || submitting ? (
+              <div className="flex items-center gap-2 text-on-surface-variant text-sm">
+                <span className="material-symbols-outlined animate-spin-custom">sync</span>
+                {running ? "Running test cases..." : "Submitting solution..."}
+              </div>
+            ) : panelError ? (
+              <ResultCard
+                status="runtime_error"
+                title={panelError.title}
+                errorMessage={panelError.message}
+                onAskAi={() => handleAskAiFromResult(panelError.message)}
+              />
+            ) : submitResult ? (
+              <ResultCard
+                status={submitResult.status}
+                title={statusLabel(submitResult.status)}
+                passed={submitResult.testCasesPassed}
+                total={submitResult.testCasesTotal}
+                runtime={
+                  submitResult.status === "accepted"
+                    ? `${(submitResult.runtime * 1000).toFixed(0)}ms`
+                    : undefined
+                }
+                memory={
+                  submitResult.status === "accepted" ? `${submitResult.memory}KB` : undefined
+                }
+                errorMessage={submitResult.errorMessage}
+                onAskAi={
+                  submitResult.status !== "accepted"
+                    ? () =>
+                        handleAskAiFromResult(
+                          submitResult.errorMessage || statusLabel(submitResult.status)
+                        )
+                    : undefined
+                }
+              />
+            ) : runResults ? (
+              <div className="space-y-3">
+                {runResults.every(isAccepted) && (
+                  <ResultCard status="accepted" title="All Test Cases Passed" />
+                )}
+                {runResults.map((r, i) => {
+                  const testCase = problem.visibleTestCases[i];
+                  const error = extractJudgeError(r, testCase);
+                  const accepted = isAccepted(r);
+                  if (accepted && runResults.every(isAccepted)) return null;
+
+                  return (
+                    <ResultCard
+                      key={i}
+                      status={accepted ? "passed" : "failed"}
+                      title={`Case ${i + 1}: ${accepted ? "Passed" : r.status.description}`}
+                      runtime={r.time ? `${(parseFloat(r.time) * 1000).toFixed(0)}ms` : undefined}
+                      memory={r.memory ? `${r.memory}KB` : undefined}
+                      errorMessage={error ?? undefined}
+                      onAskAi={
+                        !accepted
+                          ? () =>
+                              handleAskAiFromResult(
+                                error ?? `${judgeErrorTitle(r)} on case ${i + 1}`
+                              )
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-on-surface-variant">Run or submit to see results.</p>
             )}
           </div>
-        </section>
+        )}
+      </div>
+    </div>
+  );
+
+  const rightPanel = (
+    <AiAssistantPanel
+      problemId={problem._id}
+      problemTitle={problem.title}
+      difficulty={problem.difficulty}
+      language={language}
+      code={code}
+      pendingPrompt={pendingAiPrompt}
+      onPendingConsumed={() => setPendingAiPrompt(null)}
+      onClose={() => setAiOpen(false)}
+    />
+  );
+
+  const aiOverlay =
+    aiOpen && (!isLargeScreen || !isDesktop) ? (
+      <div
+        className={isDesktop ? "ws-ai-drawer-backdrop" : "ws-ai-sheet-backdrop"}
+        onClick={() => setAiOpen(false)}
+      >
+        <div
+          className={isDesktop ? "ws-ai-drawer" : "ws-ai-sheet"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {rightPanel}
+        </div>
+      </div>
+    ) : null;
+
+  return (
+    <div className="bg-app-bg text-on-surface h-screen flex flex-col overflow-hidden">
+      <Navbar />
+
+      <main className="pt-14 flex-1 flex flex-col min-h-0 overflow-hidden">
+        {!isDesktop && (
+          <div className="flex shrink-0 border-b border-border-subtle bg-surface-container-lowest">
+            {(
+              [
+                ["description", "description", "Description"],
+                ["code", "code", "Code"],
+                ["submissions", "history", "Submissions"],
+              ] as const
+            ).map(([tab, icon, label]) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setMobileTab(tab);
+                  if (tab === "description" || tab === "submissions") {
+                    setLeftTab(tab);
+                  }
+                }}
+                className={`flex-1 flex items-center justify-center gap-1 py-3 text-xs font-semibold uppercase tracking-wider border-r border-border-subtle last:border-r-0 ${
+                  mobileTab === tab
+                    ? "bg-surface-container-high text-primary border-b-2 border-b-primary"
+                    : "text-on-surface-variant hover:bg-surface-container"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">{icon}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!isDesktop && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {mobileTab === "description" || mobileTab === "submissions" ? leftPanel : centerPanel}
+          </div>
+        )}
+
+        {isDesktop && (
+          <WorkspaceLayout
+            left={leftPanel}
+            center={centerPanel}
+            right={rightPanel}
+            showRight={aiOpen && isLargeScreen}
+            descriptionOpen={descriptionOpen}
+          />
+        )}
+
+        {aiOverlay}
       </main>
 
       <ConfirmModal
@@ -575,6 +555,44 @@ export default function ProblemEditorPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteModalOpen(false)}
       />
+
+      {viewCodeSubmission && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setViewCodeSubmission(null)}
+          />
+          <div className="relative w-full max-w-2xl max-h-[70vh] flex flex-col rounded-xl border border-border-subtle bg-surface shadow-2xl">
+            <div className="p-4 border-b border-border-subtle flex justify-between items-center">
+              <h3 className="font-semibold">Submitted Code</h3>
+              <button type="button" onClick={() => setViewCodeSubmission(null)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <pre className="p-4 overflow-auto text-xs font-mono whitespace-pre-wrap flex-1">
+              {viewCodeSubmission.code}
+            </pre>
+            <div className="p-4 border-t border-border-subtle flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setViewCodeSubmission(null)}
+                className="px-4 py-2 rounded-lg border border-border-subtle text-sm"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLoadSubmissionCode(viewCodeSubmission)}
+                className="px-4 py-2 rounded-lg bg-primary-container text-on-primary-container text-sm font-semibold"
+              >
+                Load in Editor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

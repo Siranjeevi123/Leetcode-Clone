@@ -2,7 +2,8 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 
 export default function Navbar({ variant = "default" }: { variant?: "default" | "minimal" }) {
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -18,9 +19,9 @@ export default function Navbar({ variant = "default" }: { variant?: "default" | 
     }`;
 
   return (
-    <nav className="fixed top-0 w-full h-14 bg-app-bg z-50 border-b border-border-subtle flex justify-between items-center px-6">
-      <div className="flex items-center gap-6">
-        <Link to={user ? "/problems" : "/"} className="text-xl font-bold text-primary">
+    <nav className="fixed top-0 w-full h-14 bg-sidebar/95 backdrop-blur-md z-50 border-b border-border-subtle flex justify-between items-center px-4 md:px-6">
+      <div className="flex items-center gap-4 md:gap-6">
+        <Link to={user ? "/problems" : "/"} className="text-xl font-bold text-primary tracking-tight">
           CodeForge
         </Link>
         {user && variant === "default" && (
@@ -37,7 +38,7 @@ export default function Navbar({ variant = "default" }: { variant?: "default" | 
           </div>
         )}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 md:gap-4">
         {user?.role === "admin" && (
           <>
             <NavLink
@@ -70,13 +71,14 @@ export default function Navbar({ variant = "default" }: { variant?: "default" | 
           <>
             <Link
               to="/profile"
-              className="w-8 h-8 rounded-full bg-surface-container-high border border-border-subtle flex items-center justify-center text-sm font-semibold text-primary"
+              className="w-8 h-8 rounded-full bg-surface-container-high border border-border-subtle flex items-center justify-center text-sm font-semibold text-primary hover:border-primary-container/50 transition-colors"
+              title={user.firstName}
             >
               {user.firstName.charAt(0).toUpperCase()}
             </Link>
             <button
               onClick={handleLogout}
-              className="text-sm text-on-surface-variant hover:text-primary transition-colors"
+              className="text-sm text-on-surface-variant hover:text-primary transition-colors hidden sm:block"
             >
               Logout
             </button>
@@ -88,7 +90,7 @@ export default function Navbar({ variant = "default" }: { variant?: "default" | 
             </Link>
             <Link
               to="/signup"
-              className="text-sm bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-semibold hover:brightness-110"
+              className="text-sm bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-semibold hover:brightness-110 transition-all"
             >
               Sign up
             </Link>

@@ -5,6 +5,8 @@ import { getErrorMessage } from "../api/client";
 import { createProblem, getProblem, updateProblem } from "../api/problems";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
+import Button from "../components/ui/Button";
+import LoadingScreen from "../components/ui/LoadingScreen";
 import { toast } from "../store/toastStore";
 import type {
   CreateProblemPayload,
@@ -121,13 +123,7 @@ export default function AdminProblemPage() {
   };
 
   if (initialLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-app-bg">
-        <span className="material-symbols-outlined animate-spin-custom text-primary text-3xl">
-          sync
-        </span>
-      </div>
-    );
+    return <LoadingScreen message="Loading problem..." />;
   }
 
   return (
@@ -422,20 +418,9 @@ export default function AdminProblemPage() {
             ))}
 
             <div className="flex flex-col md:flex-row-reverse gap-4 pt-4">
-              <button
-                type="submit"
-                disabled={loading}
-                className="h-11 px-8 bg-primary-container text-on-primary-container font-bold rounded hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-70"
-              >
-                {loading ? (
-                  <span className="material-symbols-outlined animate-spin-custom">sync</span>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined">publish</span>
-                    {isEdit ? "Update Problem" : "Create Problem"}
-                  </>
-                )}
-              </button>
+              <Button type="submit" loading={loading} size="lg">
+                {isEdit ? "Update Problem" : "Create Problem"}
+              </Button>
               <Link
                 to="/problems"
                 className="h-11 px-8 border border-border-subtle text-on-surface font-semibold rounded hover:bg-surface-elevated flex items-center justify-center"
