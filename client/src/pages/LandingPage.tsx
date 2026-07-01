@@ -28,9 +28,9 @@ const features = [
 ];
 
 const stats = [
-  { value: "500+", label: "Practice Problems" },
-  { value: "10k+", label: "Active Coders" },
-  { value: "98%", label: "Success Rate" },
+  { value: "5", label: "Languages Supported" },
+  { value: "3", label: "Difficulty Levels" },
+  { value: "95%", label: "Success Rate" },
   { value: "24/7", label: "Code Execution" },
 ];
 
